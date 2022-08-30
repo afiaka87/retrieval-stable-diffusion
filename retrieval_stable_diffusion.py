@@ -101,7 +101,6 @@ class RetrievalStableDiffusionPipeline(DiffusionPipeline):
             indices, distances, retrieval_latents
         )
         vae_latents = vae_latents.to(self.device)
-        vae_latents = vae_latents * 0.18215
         print(f"vae_latents: {vae_latents.shape}")
 
         # the starting diffusion timestep and the total number of timesteps
@@ -211,6 +210,7 @@ class RetrievalStableDiffusionPipeline(DiffusionPipeline):
         generator: Optional[torch.Generator],
     ) -> Tuple[torch.FloatTensor, torch.FloatTensor, int]:
         # encode the init image into latents and scale the latents
+        init_latents = init_latents * 0.18215
         init_latents = torch.cat([init_latents] * batch_size)
         noise = torch.randn(init_latents.shape, generator=generator, device=self.device)
         noised_latents = self.scheduler.add_noise(init_latents, noise, timesteps)
