@@ -1,4 +1,3 @@
-from random import sample
 import inspect
 from typing import List, Optional, Tuple, Union
 
@@ -17,7 +16,6 @@ from diffusers.pipelines.stable_diffusion import StableDiffusionSafetyChecker
 from PIL import Image
 from tqdm.auto import tqdm
 
-from clip_util import Perceptor
 import knn_util
 
 
@@ -41,7 +39,7 @@ class RetrievalStableDiffusionPipeline(DiffusionPipeline):
             scheduler=scheduler,
             safety_checker=safety_checker,
         )
-        self.clip_perceptor = Perceptor(device=self.device, clip_name="ViT-L/14")
+        self.clip_perceptor = knn_util.Perceptor(device=self.device, clip_name="ViT-L/14")
         print(f"Loaded CLIP ViT-L/14 on {self.device}")
         self.uncond_latents = self.clip_perceptor.encode_prompts([""]).to(
             self.device
