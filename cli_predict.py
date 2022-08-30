@@ -69,6 +69,7 @@ def parse_args():
         help="Scale for classifier-free guidance",
         default=7.5,
     )
+    parser.add_argument("--clip_retrieved_weight", type=float, default=0.4)
     parser.add_argument("--seed", type=int, help="Random seed", default=None)
     parser.add_argument(
         "--output_dir", type=str, help="Output directory", default="output"
@@ -147,6 +148,7 @@ def main():
                 width=args.width,
                 height=args.height,
                 prompt_strength=args.prompt_strength,
+                clip_retrieved_weight=args.clip_retrieved_weight,
                 guidance_scale=args.guidance_scale,
                 num_inference_steps=args.num_inference_steps,
                 generator=generator,

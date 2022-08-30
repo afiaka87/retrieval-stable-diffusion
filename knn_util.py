@@ -20,7 +20,6 @@ def clip_image_preprocess(image: torch.Tensor, clip_size: int = 224) -> torch.Te
     image = tvf.resize(
         image, [clip_size, clip_size], interpolation=tvf.InterpolationMode.BICUBIC
     )
-    image = tvf.to_tensor(image)
     image = (image + 1.0) / 2.0  # normalize to [0, 1]
     image = tvf.normalize(
         image, [0.48145466, 0.4578275, 0.40821073], [0.26862954, 0.26130258, 0.27577711]
@@ -48,8 +47,6 @@ class Perceptor:
         self, prompts: Union[str, List[str]], normalize: bool = True
     ) -> torch.Tensor:
         if isinstance(prompts, str):
-            # either a single prompt or a list of prompts separated by |
-            prompts = prompts.split("|") if "|" in prompts else [prompts]
             prompts = [prompt.strip() for prompt in prompts]
         text_tokens = clip.tokenize(prompts).to(self.device)
         encoded_text = self.clip_model.encode_text(text_tokens)
@@ -62,18 +59,14 @@ class Perceptor:
         return encoded_text
 
     @torch.no_grad()
-    def encode_image(self, image_path: str, normalize: bool = True) -> torch.Tensor:
-        image = PILImage.open(image_path).convert("RGB")
-        image = (
-            clip_image_preprocess(image, clip_size=self.clip_size)
-            .unsqueeze(0)
+    def encode_image(self, image_tensor: PILImage, normalize: bool = True) -> torch.Tensor:
+        processed_image_tensor = (
+            clip_image_preprocess(image_tensor, clip_size=self.clip_size)
             .to(self.device)
         )
-        image_features = self.clip_model.encode_image(image)
+        image_features = self.clip_model.encode_image(processed_image_tensor)
         if normalize:
             image_features /= image_features.norm(dim=1, keepdim=True)
-        if image_features.ndim == 2:
-            image_features = image_features[:, None, :]
         return image_features
 
 

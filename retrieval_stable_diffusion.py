@@ -20,6 +20,10 @@ from tqdm.auto import tqdm
 import knn_util
 
 
+from tqdm.auto import tqdm
+from transformers import CLIPFeatureExtractor  # , CLIPTextModel, CLIPTokenizer
+
+
 class RetrievalStableDiffusionPipeline(DiffusionPipeline):
     """
     Modified from https://github.com/huggingface/diffusers/pull/241
@@ -31,6 +35,7 @@ class RetrievalStableDiffusionPipeline(DiffusionPipeline):
         unet: UNet2DConditionModel,
         scheduler: Union[DDIMScheduler, PNDMScheduler, LMSDiscreteScheduler],
         safety_checker: StableDiffusionSafetyChecker,
+        feature_extractor: CLIPFeatureExtractor,
     ):
         super().__init__()
         scheduler = scheduler.set_format("pt")
@@ -39,6 +44,7 @@ class RetrievalStableDiffusionPipeline(DiffusionPipeline):
             unet=unet,
             scheduler=scheduler,
             safety_checker=safety_checker,
+            feature_extractor=feature_extractor,
         )
         self.clip_perceptor = knn_util.Perceptor(
             device=self.device, clip_name="ViT-L/14"
@@ -48,7 +54,7 @@ class RetrievalStableDiffusionPipeline(DiffusionPipeline):
             self.device
         )  # for CFG
 
-    @torch.no_grad()
+    @torch.inference_mode()
     def __call__(
         self,
         prompt: str,
@@ -57,6 +63,7 @@ class RetrievalStableDiffusionPipeline(DiffusionPipeline):
         width: int,
         height: int,
         prompt_strength: float = 0.8,
+        clip_retrieved_weight: float = 0.4,
         num_inference_steps: int = 50,
         guidance_scale: float = 7.5,
         eta: float = 0.0,
@@ -138,6 +145,8 @@ class RetrievalStableDiffusionPipeline(DiffusionPipeline):
             )
 
         text_embeddings = text_embeddings.to(self.device)
+        clip_image_features = clip_image_features / torch.linalg.norm(clip_image_features, dim=-1, keepdim=True)
+        text_embeddings = text_embeddings + clip_image_features * clip_retrieved_weight
 
         for i, t in tqdm(enumerate(self.scheduler.timesteps[t_start:])):
             # expand the latents if we are doing classifier free guidance
@@ -173,21 +182,18 @@ class RetrievalStableDiffusionPipeline(DiffusionPipeline):
 
         # scale and decode the image latents with vae
         latents = 1 / 0.18215 * latents
-        decoded_image = self.vae.decode(latents)
-
-        decoded_image = (decoded_image / 2 + 0.5).clamp(0, 1)
-        decoded_image = decoded_image.cpu().permute(0, 2, 3, 1).numpy()
-        decoded_image = self.numpy_to_pil(decoded_image)
+        decoded_image_tensor = self.vae.decode(latents)
+        decoded_image_tensor = (decoded_image_tensor / 2 + 0.5).clamp(0, 1)
+        decoded_image_npy = decoded_image_tensor.cpu().permute(0, 2, 3, 1).numpy()
 
         # run safety checker
-        safety_cheker_input = self.feature_extractor(
-            decoded_image, return_tensors="pt"
-        ).to(self.device)
-        decoded_image, has_nsfw_concept = self.safety_checker(
-            images=decoded_image, clip_input=safety_cheker_input.pixel_values
-        )
-
-        return {"sample": decoded_image, "nsfw_content_detected": has_nsfw_concept}
+        # safety_checker_input = self.clip_perceptor.encode_image(decoded_image_tensor)
+        # TODO this requires loading clip twice
+        pil_images = self.numpy_to_pil(decoded_image_npy)
+        # safety_cheker_input = self.feature_extractor(unsafe_pil_images, return_tensors="pt").to(self.device)
+        # safe_images_npy, has_nsfw_concept = self.safety_checker(images=decoded_image_npy, clip_input=safety_cheker_input.pixel_values)
+        # safe_images_pil = self.numpy_to_pil(safe_images_npy)
+        return {"sample": pil_images }#, "nsfw_content_detected": has_nsfw_concept}
 
     def compute_timesteps(
         self, num_inference_steps, prompt_strength, offset, batch_size
