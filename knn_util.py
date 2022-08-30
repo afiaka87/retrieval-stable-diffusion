@@ -7,9 +7,6 @@ import torch
 from clip_retrieval.clip_back import load_index
 from diffusers import AutoencoderKL
 
-VAE_MODEL_WEIGHTS = (
-    "/home/claym/Projects/cog-stable-diffusion/diffusers-cache/vae"  # TODO
-)
 from typing import List, Optional, Union
 
 import numpy as np

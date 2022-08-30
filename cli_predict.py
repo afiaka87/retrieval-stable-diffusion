@@ -1,4 +1,3 @@
-import knn_util
 import argparse
 import datetime
 import io
@@ -9,12 +8,12 @@ from pathlib import Path
 
 import torch
 import wandb
-from clip_retrieval.clip_back import load_index
 from diffusers import PNDMScheduler
 from PIL import Image
 from tqdm import tqdm
 
 from retrieval_stable_diffusion import RetrievalStableDiffusionPipeline
+import knn_util
 
 
 def download_image(url):
