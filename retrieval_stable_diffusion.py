@@ -14,6 +14,7 @@ from diffusers import (
 )
 from diffusers.pipelines.stable_diffusion import StableDiffusionSafetyChecker
 from PIL import Image
+from torchvision.transforms import functional as torchvision_functional
 from tqdm.auto import tqdm
 
 import knn_util
@@ -39,7 +40,9 @@ class RetrievalStableDiffusionPipeline(DiffusionPipeline):
             scheduler=scheduler,
             safety_checker=safety_checker,
         )
-        self.clip_perceptor = knn_util.Perceptor(device=self.device, clip_name="ViT-L/14")
+        self.clip_perceptor = knn_util.Perceptor(
+            device=self.device, clip_name="ViT-L/14"
+        )
         print(f"Loaded CLIP ViT-L/14 on {self.device}")
         self.uncond_latents = self.clip_perceptor.encode_prompts([""]).to(
             self.device
@@ -98,6 +101,7 @@ class RetrievalStableDiffusionPipeline(DiffusionPipeline):
             indices, distances, retrieval_latents
         )
         vae_latents = vae_latents.to(self.device)
+        vae_latents = vae_latents * 0.18215
         print(f"vae_latents: {vae_latents.shape}")
 
         # the starting diffusion timestep and the total number of timesteps
@@ -115,7 +119,6 @@ class RetrievalStableDiffusionPipeline(DiffusionPipeline):
             batch_size=batch_size,
             generator=generator,
         )
-        latents = latents.to(self.device)
 
         # eta (η) is only used with the DDIMScheduler, it will be ignored for other schedulers.
         accepts_eta = "eta" in set(
@@ -171,23 +174,21 @@ class RetrievalStableDiffusionPipeline(DiffusionPipeline):
 
         # scale and decode the image latents with vae
         latents = 1 / 0.18215 * latents
-        image = self.vae.decode(latents)
+        decoded_image = self.vae.decode(latents)
 
-        image = (image / 2 + 0.5).clamp(0, 1)
-        image = image.cpu().permute(0, 2, 3, 1).numpy()
+        decoded_image = (decoded_image / 2 + 0.5).clamp(0, 1)
+        decoded_image = decoded_image.cpu().permute(0, 2, 3, 1).numpy()
+        decoded_image = self.numpy_to_pil(decoded_image)
 
         # run safety checker
-        # safety_cheker_input = self.feature_extractor(
-        #     self.numpy_to_pil(image), return_tensors="pt"
-        # ).to(self.device)
-        # image, has_nsfw_concept = self.safety_checker(
-        #     images=image, clip_input=safety_cheker_input.pixel_values
-        # )
+        safety_cheker_input = self.feature_extractor(
+            decoded_image, return_tensors="pt"
+        ).to(self.device)
+        decoded_image, has_nsfw_concept = self.safety_checker(
+            images=decoded_image, clip_input=safety_cheker_input.pixel_values
+        )
 
-        image = self.numpy_to_pil(image)
-
-        return {"sample": image}
-        # return {"sample": image, "nsfw_content_detected": has_nsfw_concept}
+        return {"sample": decoded_image, "nsfw_content_detected": has_nsfw_concept}
 
     def compute_timesteps(
         self, num_inference_steps, prompt_strength, offset, batch_size
@@ -210,7 +211,6 @@ class RetrievalStableDiffusionPipeline(DiffusionPipeline):
         generator: Optional[torch.Generator],
     ) -> Tuple[torch.FloatTensor, torch.FloatTensor, int]:
         # encode the init image into latents and scale the latents
-        init_latents = 0.18215 * init_latents
         init_latents = torch.cat([init_latents] * batch_size)
         noise = torch.randn(init_latents.shape, generator=generator, device=self.device)
         noised_latents = self.scheduler.add_noise(init_latents, noise, timesteps)
